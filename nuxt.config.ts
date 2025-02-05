@@ -1,6 +1,24 @@
-// https://nuxt.com/docs/api/configuration/nuxt-config
+import { defineNuxtConfig } from 'nuxt/config'
+
 export default defineNuxtConfig({
-  compatibilityDate: '2024-11-01',
-  devtools: { enabled: true },
-  modules: ['@nuxtjs/tailwindcss']
+  ssr: true,
+
+  modules: [
+    '@nuxtjs/tailwindcss'
+  ],
+
+  build: {
+    transpile: ['lucide-vue-next']
+  },
+
+  vite: {
+    optimizeDeps: {
+      include: ['lucide-vue-next']
+    },
+    resolve: {
+      dedupe: ['vue']
+    }
+  },
+
+  compatibilityDate: '2025-02-05'
 })
