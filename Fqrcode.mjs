@@ -1,6 +1,8 @@
 import QRCode from 'qrcode';
 import qrcodeReader from 'qrcode-reader';
-import Jimp from 'jimp';
+import * as Jimp from 'jimp';
+import fs from 'fs';
+import path from 'path';
 
 // Define stock types
 const stockTypes = {
@@ -9,29 +11,47 @@ const stockTypes = {
     'F': 'Other'
 };
 
-// Function to generate a random 4-character hex code
-function generateHexCode(length) {
-    let hex = '';
-    for (let i = 0; i < length; i++) {
-        hex += Math.floor(Math.random() * 16).toString(16).toUpperCase();
+// Ensure the destination folder exists
+const outputDir = path.join(process.cwd(), 'qrcodes');
+if (!fs.existsSync(outputDir)) {
+    fs.mkdirSync(outputDir, { recursive: true });
+}
+
+// Track the last used hex code
+const counterFile = path.join(outputDir, 'counter.json');
+let counter = 0;
+
+if (fs.existsSync(counterFile)) {
+    try {
+        const data = JSON.parse(fs.readFileSync(counterFile, 'utf8'));
+        counter = data.counter % 0x10000; // Ensure it wraps around after FFFF
+    } catch (err) {
+        console.error('Error reading counter file:', err);
     }
+}
+
+// Function to generate a sequential 4-character hex code
+function generateHexCode() {
+    const hex = counter.toString(16).toUpperCase().padStart(4, '0');
+    counter = (counter + 1) % 0x10000; // Increment and wrap at 0xFFFF
+    fs.writeFileSync(counterFile, JSON.stringify({ counter }), 'utf8');
     return hex;
 }
 
-// Function to generate a QR code
+// Function to generate a QR code and save as PNG
 async function generateQRCode(stockType) {
     if (!stockTypes[stockType]) {
         console.error('Invalid stock type!');
         return;
     }
     
-    const hexCode = generateHexCode(4); // Generate 16-bit random hex (4 characters)
+    const hexCode = generateHexCode(); // Generate sequential 16-bit hex (4 characters)
     const fullCode = stockType + hexCode;
+    const outputDir = path.join('C:\\PrintHive\\qr_output');
     
     try {
-        const qrDataURL = await QRCode.toDataURL(fullCode);
-        console.log(`Generated QR Code for ${stockTypes[stockType]} (${fullCode}):`);
-        console.log(qrDataURL);
+        await QRCode.toFile(filePath, fullCode);
+        console.log(`Generated QR Code for ${stockTypes[stockType]} (${fullCode}) and saved as ${filePath}`);
     } catch (err) {
         console.error('Error generating QR code:', err);
     }
@@ -59,4 +79,4 @@ async function readQRCode(imagePath) {
 generateQRCode('1');
 
 // Example: Read a QR code from an image file
-// readQRCode('path_to_qr_image.png');
+// readQRCode('qrcodes/10000.png');
