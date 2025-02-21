@@ -44,4 +44,7 @@ npm run dev
 ```
 
 
-npm install qrcode jimp qrcode-reader
+install independent
+```bas
+hnpm install qrcode jimp qrcode-reader
+```
