@@ -74,3 +74,7 @@ ALTER TABLE filament ADD COLUMN hex_code VARCHAR(16) UNIQUE NOT NULL;
 
 -- Modify Printer Parts Table
 ALTER TABLE printer_parts ADD COLUMN hex_code VARCHAR(16) UNIQUE NOT NULL;
+
+-- Modify add link between queue and filament usage
+ALTER TABLE filament_usage_history ADD COLUMN job_id INT NULL;
+ALTER TABLE filament_usage_history ADD FOREIGN KEY (job_id) REFERENCES print_queue(job_id) ON DELETE SET NULL;
