@@ -1,34 +1,40 @@
 <template>
-  <div class="p-6 max-w-md mx-auto text-center">
-    <h1 class="text-2xl font-bold mb-4">Generate Stock QR</h1>
-
-    <form @submit.prevent="generateQR">
-      <select v-model="type" class="border p-2 mb-4 w-full">
-        <option value="1">Filament</option>
-        <option value="2">Parts</option>
-        <option value="F">Other</option>
-      </select>
-      <button class="bg-blue-500 text-white px-4 py-2 rounded">Generate</button>
+  <div class="p-8 max-w-sm mx-auto">
+    <h1 class="text-xl font-bold mb-4">Login</h1>
+    <form @submit.prevent="login">
+      <input v-model="username" placeholder="Username" class="border p-2 w-full mb-2" />
+      <input v-model="password" type="password" placeholder="Password" class="border p-2 w-full mb-4" />
+      <button class="bg-blue-500 text-white px-4 py-2 rounded">Login</button>
     </form>
-
-    <div v-if="result" class="mt-4">
-      <h2 class="font-semibold">QR: {{ result.code }}</h2>
-      <img :src="result.url" class="mx-auto w-40 h-40" />
-    </div>
+    <p v-if="error" class="text-red-500 mt-2">{{ error }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { useFetch } from '#app'; 
 
-const type = ref('1');
-const result = ref<{ code: string, url: string } | null>(null);
+const username = ref('');
+const password = ref('');
+const error = ref('');
+const router = useRouter();
 
-const generateQR = async () => {
-  const { data } = await useFetch('/api/generate-qr', {
+const login = async () => {
+  const { data, error: err } = await useFetch('/api/login', {
     method: 'POST',
-    body: { type: type.value }
+    body: { username: username.value, password: password.value }
   });
-  result.value = data.value;
+
+  if (err.value) {
+    error.value = 'Login failed';
+    return;
+  }
+
+  const role = data.value.role;
+  if (role === 'Admin') router.push('/admin');
+  else if (role === 'Technician') router.push('/technician');
+  else router.push('/operator');
 };
 </script>
+
