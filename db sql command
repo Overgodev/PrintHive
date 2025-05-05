@@ -1,0 +1,132 @@
+-- Create Printer Table
+CREATE TABLE printer (
+    printer_id INT AUTO_INCREMENT PRIMARY KEY,
+    printer_name VARCHAR(100) NOT NULL,
+    status ENUM('idle', 'printing', 'maintenance') NOT NULL DEFAULT 'idle',
+    current_spool INT NULL,  -- Links to the filament being used (optional)
+    last_used TIMESTAMP NULL
+);
+
+-- Create Filament Table
+CREATE TABLE filament (
+    stock_id INT AUTO_INCREMENT PRIMARY KEY,
+    material VARCHAR(50) NOT NULL,  -- PLA, ABS, PETG, etc.
+    color VARCHAR(50) NOT NULL,
+    diameter DECIMAL(3,2) NOT NULL,  -- 1.75mm or 2.85mm
+    weight INT NOT NULL,  -- Spool weight in grams
+    remaining_weight INT NOT NULL,  -- Filament left in grams
+    current_printer INT NULL,  -- Printer currently using this filament (optional)
+    FOREIGN KEY (current_printer) REFERENCES printer(printer_id) ON DELETE SET NULL
+);
+
+-- Create Printer Parts Table
+CREATE TABLE printer_parts (
+    part_id INT AUTO_INCREMENT PRIMARY KEY,
+    part_name VARCHAR(100) NOT NULL,  -- Name of the part (e.g., Nozzle, Hotend, Stepper Motor)
+    category VARCHAR(50) NOT NULL,  -- Type of part (Hotend, Stepper, Nozzle, etc.)
+    brand VARCHAR(100) NOT NULL,  -- Part brand
+    stock_quantity INT NOT NULL,  -- Total available stock
+    warning_threshold INT NOT NULL,  -- Minimum quantity before warning
+    wear_level INT NOT NULL DEFAULT 0,  -- Current wear level of the part
+    max_wear_limit INT NOT NULL  -- When this value is reached, warn the user
+);
+
+-- Create Printer-Part Relationship Table
+CREATE TABLE printer_part_usage (
+    printer_id INT NOT NULL,
+    part_id INT NOT NULL,
+    quantity_used INT NOT NULL DEFAULT 1,  -- How many of this part are installed on the printer
+    wear_usage INT NOT NULL DEFAULT 0,  -- How much wear this part has accumulated
+    PRIMARY KEY (printer_id, part_id),
+    FOREIGN KEY (printer_id) REFERENCES printer(printer_id) ON DELETE CASCADE,
+    FOREIGN KEY (part_id) REFERENCES printer_parts(part_id) ON DELETE CASCADE
+);
+
+-- Create Filament Usage History Table
+CREATE TABLE filament_usage_history (
+    usage_id INT AUTO_INCREMENT PRIMARY KEY,
+    stock_id INT NOT NULL,  -- Links to Filament Table
+    printer_id INT NULL,  -- Nullable if no printer was assigned
+    used_weight INT NOT NULL,  -- How much filament was used (grams)
+    start_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- When the print started
+    end_time TIMESTAMP NULL,  -- When the print finished
+    FOREIGN KEY (stock_id) REFERENCES filament(stock_id) ON DELETE CASCADE,
+    FOREIGN KEY (printer_id) REFERENCES printer(printer_id) ON DELETE SET NULL
+);
+
+-- Create Print Queue Table
+CREATE TABLE print_queue (
+    job_id INT AUTO_INCREMENT PRIMARY KEY,
+    printer_id INT NULL,  -- Nullable if the job hasn't been assigned yet
+    filament_id INT NOT NULL,  -- Required filament for the job
+    job_name VARCHAR(255) NOT NULL,  -- Name of the print job
+    priority ENUM('high', 'medium', 'low') NOT NULL DEFAULT 'medium',  -- Priority system
+    status ENUM('queued', 'printing', 'completed', 'failed') NOT NULL DEFAULT 'queued',  -- Current status
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,  -- When the job was added to the queue
+    started_at TIMESTAMP NULL,  -- When the job started
+    completed_at TIMESTAMP NULL,  -- When the job finished
+    FOREIGN KEY (printer_id) REFERENCES printer(printer_id) ON DELETE SET NULL,
+    FOREIGN KEY (filament_id) REFERENCES filament(stock_id) ON DELETE CASCADE
+);
+
+-- Modify Filament Table
+ALTER TABLE filament ADD COLUMN hex_code VARCHAR(16) UNIQUE NOT NULL;
+
+-- Modify Printer Parts Table
+ALTER TABLE printer_parts ADD COLUMN hex_code VARCHAR(16) UNIQUE NOT NULL;
+
+-- Modify add link between queue and filament usage
+ALTER TABLE filament_usage_history ADD COLUMN job_id INT NULL;
+ALTER TABLE filament_usage_history ADD FOREIGN KEY (job_id) REFERENCES print_queue(job_id) ON DELETE SET NULL;
+
+
+-- add trigger for job fail and completed to assume the filament was used
+DELIMITER //
+
+CREATE TRIGGER log_filament_usage
+AFTER UPDATE ON print_queue
+FOR EACH ROW
+BEGIN
+    -- Only log when a job is marked as "completed" or "failed"
+    IF NEW.status IN ('completed', 'failed') THEN
+        INSERT INTO filament_usage_history (stock_id, printer_id, job_id, used_weight, start_time, end_time)
+        VALUES (
+            NEW.filament_id, 
+            NEW.printer_id, 
+            NEW.job_id, 
+            (SELECT weight * 0.95 FROM filament WHERE stock_id = NEW.filament_id),  -- Assume 95% of filament is used
+            NEW.started_at,
+            NOW()
+        );
+    END IF;
+END //
+
+DELIMITER ;
+
+--for keeping the overwrite log
+CREATE TABLE filament_usage_overwrite (
+    overwrite_id INT AUTO_INCREMENT PRIMARY KEY,
+    usage_id INT NOT NULL,
+    old_weight INT NOT NULL,
+    new_weight INT NOT NULL,
+    modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    modified_by VARCHAR(100) NOT NULL,  -- The user/admin who made the change
+    FOREIGN KEY (usage_id) REFERENCES filament_usage_history(usage_id) ON DELETE CASCADE
+);
+
+--trigger for the auto overwirte filament useage
+DELIMITER //
+
+CREATE TRIGGER before_filament_usage_update
+BEFORE UPDATE ON filament_usage_history
+FOR EACH ROW
+BEGIN
+    -- Only log changes if the used_weight is actually modified
+    IF OLD.used_weight <> NEW.used_weight THEN
+        INSERT INTO filament_usage_overwrite (usage_id, old_weight, new_weight, modified_by)
+        VALUES (OLD.usage_id, OLD.used_weight, NEW.used_weight, 'admin_user');  -- Replace 'admin_user' with actual user tracking
+    END IF;
+END //
+
+DELIMITER ;
+

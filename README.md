@@ -10,7 +10,11 @@ Make sure to install dependencies:
 npm install lucide-vue-next
 
 npm install
+<<<<<<< HEAD
 
+=======
+```
+>>>>>>> 89c7c92536642c21f835dd8735c34f6b7f12dca1
 
 ## Development Server
 
@@ -38,3 +42,13 @@ npm run preview
 ```
 
 # PrintHive
+```bash
+# npm
+npm run dev
+```
+
+
+install independent
+```bas
+hnpm install qrcode jimp qrcode-reader
+```
