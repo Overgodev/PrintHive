@@ -303,7 +303,7 @@
   // Handle logout
   const handleLogout = () => {
     // Add your logout logic here
-    router.push('/login')
+    router.push('/')
   }
   
   // Lifecycle hooks

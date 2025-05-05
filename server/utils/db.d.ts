@@ -1,12 +1,11 @@
-// server/utils/db.d.ts
-export interface DbExecuteResult<T = any> {
-    // Define your result structure here
-    [key: string]: any;
+export interface Database {
+    query<T>(
+      sql: string, 
+      values?: any | any[] | { [param: string]: any }
+    ): Promise<[T, any]>;
+    
+    execute<T>(
+      sql: string, 
+      values?: any | any[] | { [param: string]: any }
+    ): Promise<[T, any]>;
   }
-  
-  export interface Database {
-    execute: (query: string, params?: any[]) => Promise<[DbExecuteResult[], any]>;
-    // Add any other methods your database has
-  }
-  
-  export const db: Database;
