@@ -8,18 +8,18 @@
       </div>
       <div class="login-section">
         <h1>Welcome Back :)</h1>
-        <p class="subtitle">To keep connected with us please login with your personal information by email address and password</p>
+        <p class="subtitle">To keep connected with us please login with your personal information by username and password</p>
         
         <form class="login-form" @submit.prevent="handleLogin">
           <div class="input-group">
-            <label for="email">Email Address</label>
+            <label for="username">Username</label>
             <input 
-              type="email" 
-              id="email" 
-              v-model="email" 
-              :class="{ 'valid-input': isEmailValid }"
+              type="text" 
+              id="username" 
+              v-model="username" 
+              :class="{ 'valid-input': isUsernameValid }"
             />
-            <span v-if="isEmailValid" class="input-icon success-icon">✓</span>
+            <span v-if="isUsernameValid" class="input-icon success-icon">✓</span>
           </div>
           
           <div class="input-group">
@@ -61,22 +61,22 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 
 // Form state
-const email = ref('')
+const username = ref('')
 const password = ref('')
 const rememberMe = ref(false)
 const isLoading = ref(false)
 const errorMessage = ref('')
 
 // Validation
-const isEmailValid = computed(() => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return email.value && emailRegex.test(email.value)
+const isUsernameValid = computed(() => {
+  // Username validation - at least 3 characters
+  return username.value && username.value.length >= 3
 })
 
 // Handle login
 const handleLogin = async () => {
-  if (!isEmailValid.value || !password.value) {
-    errorMessage.value = 'Please enter a valid email and password'
+  if (!isUsernameValid.value || !password.value) {
+    errorMessage.value = 'Please enter a valid username and password'
     return
   }
 
@@ -88,7 +88,7 @@ const handleLogin = async () => {
     const response = await $fetch('/api/auth/login', {
       method: 'POST',
       body: {
-        email: email.value,
+        username: username.value,
         password: password.value,
         remember: rememberMe.value
       }
@@ -114,7 +114,6 @@ const handleLogin = async () => {
 </script>
 
 <style scoped>
-<style>
 html, body {
   margin: 0;
   padding: 0;

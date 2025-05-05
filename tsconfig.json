@@ -22,7 +22,7 @@
     "./**/*.ts",
     "./**/*.tsx",
     "./**/*.vue"
-  ],
+, "password_hash.js"  ],
   "exclude": [
     "node_modules",
     ".nuxt",
