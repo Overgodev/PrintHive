@@ -1,42 +1,34 @@
 <template>
-  <div>
-    <h1 class="text-2xl font-bold mb-6 text-white">Print Farm Dashboard</h1>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <PrinterCard 
-        v-for="printer in printers" 
-        :key="printer.id" 
-        :printer="printer" 
-      />
-      <div class="bg-[#1A1F29] rounded-lg p-6 flex items-center justify-center min-h-[180px]">
-        <button class="bg-[#00B894] hover:bg-[#00A583] text-white px-6 py-3 rounded-md flex items-center gap-2">
-          <Plus class="w-5 h-5" />
-          NEW PRINTER
-        </button>
-      </div>
+  <div class="p-6 max-w-md mx-auto text-center">
+    <h1 class="text-2xl font-bold mb-4">Generate Stock QR</h1>
+
+    <form @submit.prevent="generateQR">
+      <select v-model="type" class="border p-2 mb-4 w-full">
+        <option value="1">Filament</option>
+        <option value="2">Parts</option>
+        <option value="F">Other</option>
+      </select>
+      <button class="bg-blue-500 text-white px-4 py-2 rounded">Generate</button>
+    </form>
+
+    <div v-if="result" class="mt-4">
+      <h2 class="font-semibold">QR: {{ result.code }}</h2>
+      <img :src="result.url" class="mx-auto w-40 h-40" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Plus } from 'lucide-vue-next'
-import PrinterCard from '~/components/PrinterCard.vue'
+import { ref } from 'vue';
 
-interface Printer {
-  id: number
-  name: string
-  status: 'PRINTING' | 'OPERATIONAL' | 'MAINTENANCE'
-  progress?: number
-  currentFile?: string
-}
+const type = ref('1');
+const result = ref<{ code: string, url: string } | null>(null);
 
-const printers = ref<Printer[]>([
-  {
-    id: 1,
-    name: 'OctoPrint 1.10.3',
-    status: 'PRINTING',
-    progress: 39.2,
-    currentFile: 'Groen_TurbineMerged_0.2mm_PLA_MK3S_8h14m (1).gcode'
-  }
-])
+const generateQR = async () => {
+  const { data } = await useFetch('/api/generate-qr', {
+    method: 'POST',
+    body: { type: type.value }
+  });
+  result.value = data.value;
+};
 </script>
