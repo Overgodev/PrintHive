@@ -69,9 +69,21 @@ async function updatePrinterStatus(printerData: PrinterUpdateData): Promise<void
 /**
  * Gets printer status from Moonraker API
  */
-async function fetchMoonrakerStatus(printerIp: string, port: number = 7125): Promise<MoonrakerPrinterStatus> {
+async function fetchMoonrakerStatus(printerIp: string, port: number = 7125, apiKey?: string): Promise<MoonrakerPrinterStatus> {
   try {
-    const response = await axios.get(`http://${printerIp}:${port}/printer/objects/query?print_stats&extruder&heater_bed`);
+    console.log(`Attempting to connect to printer at ${printerIp}:${port}`);
+    
+    // Configure headers with API key if provided
+    const config = apiKey ? {
+      headers: {
+        'X-Api-Key': apiKey
+      }
+    } : {};
+    
+    const response = await axios.get(
+      `http://${printerIp}:${port}/printer/objects/query?print_stats&extruder&heater_bed`, 
+      config
+    );
     
     if (response.data && response.data.result && response.data.result.status) {
       return response.data.result.status;
@@ -88,26 +100,43 @@ async function fetchMoonrakerStatus(printerIp: string, port: number = 7125): Pro
  * Maps Moonraker printer state to your database status format
  */
 function mapPrinterState(moonrakerState: string): string {
+  // Log the incoming state for debugging
+  console.log(`Mapping Moonraker state: "${moonrakerState}"`);
+  
   switch (moonrakerState.toLowerCase()) {
+    // Standard Operational States
     case 'printing':
+    case 'resuming':
+    case 'sdcard_printing':
       return 'busy';
+      
     case 'paused':
       return 'paused';
-    case 'complete':
-      return 'idle';
-    case 'standby':
+      
     case 'ready':
+    case 'standby':
+    case 'printing_cancelled':
+    case 'manual_step':
+    case 'complete':  
       return 'idle';
+      
+    case 'startup':
+    case 'firmware_restarting':
+      return 'starting';
+      
+    // Error & Halt States
     case 'error':
+    case 'shutdown':
+    case 'halt':
+    case 'config_error':
       return 'error';
+      
+    // Default case for any unhandled states
     default:
+      console.log(`Unhandled printer state: "${moonrakerState}" - defaulting to offline`);
       return 'offline';
   }
 }
-
-/**
- * Update print job status if a job is active
- */
 
 /**
  * Update print job status if a job is active
@@ -157,37 +186,39 @@ async function updatePrintJobStatus(printerId: number, filename: string, printSt
  */
 async function updateAllPrinters(): Promise<void> {
   try {
-    // Get all printers from the database with proper typing
     interface PrinterRow {
       printer_id: number;
       printer_name: string;
       ip_address: string | null;
+      api_key: string | null;  // Added api_key field
     }
     
-    // Correctly specify the return type from the query
     const [printers] = await db.query<PrinterRow[]>(`
       SELECT 
         printer_id,
         printer_name,
-        ip_address
+        ip_address,
+        api_key
       FROM printer
       WHERE ip_address IS NOT NULL
     `);
 
     console.log(`Found ${printers.length} printers to update`);
     
-    // Now TypeScript knows printers is an array of PrinterRow objects
     for (const printer of printers) {
       try {
-        // Skip if no IP address
         if (!printer.ip_address) {
           console.log(`Skipping printer ${printer.printer_name} - no IP address`);
           continue;
         }
       
-        // Fetch status from Moonraker
-        const status = await fetchMoonrakerStatus(printer.ip_address);
-        
+        // Pass the API key if available
+        const status = await fetchMoonrakerStatus(
+          printer.ip_address,
+          7125,  // default port
+          printer.api_key || undefined
+        );
+      
         // Prepare data for database update
         const updateData: PrinterUpdateData = {
           printerId: printer.printer_id,
@@ -208,12 +239,10 @@ async function updateAllPrinters(): Promise<void> {
         
       } catch (error) {
         console.error(`Error updating printer ${printer.printer_name}:`, error);
-        // Continue with other printers even if one fails
       }
     }
     
     console.log('Printer status update completed');
-    return;
   } catch (error) {
     console.error('Error updating printer statuses:', error);
     throw error;

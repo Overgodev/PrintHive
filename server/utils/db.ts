@@ -47,14 +47,6 @@ initDatabase()
     console.error('Failed to initialize database:', err);
   });
 
-// Initialize the database immediately
-initDatabase()
-  .then(connection => {
-    db = connection;
-  })
-  .catch(err => {
-    console.error('Failed to initialize database:', err);
-  });
 
 // Add these functions to your existing db.ts file or create a new utility file
 
