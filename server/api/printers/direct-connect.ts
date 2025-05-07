@@ -54,6 +54,14 @@ interface FilamentData {
 }
 
 /**
+ * Interface for query result with insertId
+ */
+interface QueryResult {
+  insertId?: number;
+  affectedRows?: number;
+}
+
+/**
  * Fetch printer status directly from Moonraker API
  */
 async function fetchMoonrakerStatus(printerIp: string, port: number = 7125, apiKey?: string): Promise<MoonrakerPrinterStatus> {
@@ -85,29 +93,36 @@ async function fetchMoonrakerStatus(printerIp: string, port: number = 7125, apiK
 }
 
 /**
- * Fetch filament data for a printer
+ * Fetch filament data for a printer using the current_spool field
  */
 async function fetchFilaments(printerId: number): Promise<FilamentData[]> {
   try {
-    // Query database for filament data
-    const [rows] = await db.query<FilamentData[]>(`
+    // Directly query using the current_spool field in the printer table
+    const [currentFilaments] = await db.query(`
       SELECT 
-        f.filament_id,
+        f.stock_id AS filament_id,
         f.color,
-        f.type,
-        f.spool_length,
-        f.spool_used,
-        ROUND((1 - (f.spool_used / f.spool_length)) * 100) as level
-      FROM printer_filament pf
-      JOIN filament f ON pf.filament_id = f.filament_id
-      WHERE pf.printer_id = ? AND pf.is_active = 1
+        f.material AS type,
+        f.weight AS spool_length,
+        (f.weight - f.remaining_weight) AS spool_used,
+        ROUND((f.remaining_weight / f.weight) * 100) AS level
+      FROM printer p
+      JOIN filament f ON p.current_spool = f.stock_id
+      WHERE p.printer_id = ? AND p.current_spool IS NOT NULL
     `, [printerId]);
     
-    // Ensure we return an array
-    return Array.isArray(rows) ? rows : [];
+    // Check if we found any filament data
+    if (!Array.isArray(currentFilaments) || currentFilaments.length === 0) {
+      console.log(`No current spool found for printer ID ${printerId}`);
+      return [];
+    }
+    
+    return currentFilaments;
   } catch (error) {
     console.error(`Error fetching filaments for printer ID ${printerId}:`, error);
-    return [];
+    // Just log the error instead of throwing it, and return an empty array
+    // This prevents the error from breaking the API response
+    return []; 
   }
 }
 
@@ -166,6 +181,11 @@ function mapPrinterState(moonrakerState: string): string {
  */
 export default defineEventHandler(async (event) => {
   try {
+    // Check if a specific printer ID was requested
+    const url = event.node.req.url;
+    const printerIdMatch = url?.match(/\/direct-connect\/(\d+)$/);
+    const specificPrinterId = printerIdMatch ? parseInt(printerIdMatch[1]) : null;
+    
     // Get printer configurations from database
     interface PrinterRow {
       printer_id: number;
@@ -174,7 +194,7 @@ export default defineEventHandler(async (event) => {
       api_key: string | null;
     }
     
-    const [printers] = await db.query<PrinterRow[]>(`
+    let query = `
       SELECT 
         printer_id,
         printer_name,
@@ -182,7 +202,16 @@ export default defineEventHandler(async (event) => {
         api_key
       FROM printer
       WHERE ip_address IS NOT NULL
-    `);
+    `;
+    
+    // If specific printer requested, filter by ID
+    const params = [];
+    if (specificPrinterId) {
+      query += ' AND printer_id = ?';
+      params.push(specificPrinterId);
+    }
+    
+    const [printers] = await db.query<PrinterRow[]>(query, params);
 
     if (!printers || printers.length === 0) {
       return { 
@@ -237,8 +266,9 @@ export default defineEventHandler(async (event) => {
           status.print_stats.time_remaining = calculateTimeRemaining(status.print_stats);
         }
         
-        // Get filament data for this printer - properly typed now
+        // Get filament data for this printer - this now properly handles errors
         const filaments = await fetchFilaments(printer.printer_id);
+        console.log(`Retrieved ${filaments.length} filaments for printer ${printer.printer_name}`);
         
         // Map Moonraker state to our application state format
         status.print_stats.state = mapPrinterState(status.print_stats.state);
@@ -252,7 +282,7 @@ export default defineEventHandler(async (event) => {
           print_stats: status.print_stats,
           extruder: status.extruder,
           heater_bed: status.heater_bed,
-          filaments: filaments // This is now properly typed
+          filaments: filaments // This is now properly handled
         });
         
       } catch (error) {
@@ -278,6 +308,11 @@ export default defineEventHandler(async (event) => {
           filaments: [] // Empty array instead of undefined
         });
       }
+    }
+    
+    // Return single printer object if specific ID was requested
+    if (specificPrinterId && printerData.length === 1) {
+      return printerData[0];
     }
     
     return printerData;

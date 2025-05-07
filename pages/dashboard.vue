@@ -35,13 +35,19 @@
       <div class="main-content">
         <div class="header">
           <h1>PrintHive</h1>
-          <div class="search-container">
-            <input 
-              type="text" 
-              placeholder="Search" 
-              v-model="searchQuery"
-              @input="filterPrinters"
-            />
+          <div class="actions-container">
+            <div class="search-container">
+              <input 
+                type="text" 
+                placeholder="Search" 
+                v-model="searchQuery"
+                @input="filterPrinters"
+              />
+            </div>
+            <button @click="refreshAllPrinters" class="refresh-btn" :disabled="initialLoading || refreshInProgress">
+              <span class="refresh-icon" :class="{ 'rotating': initialLoading || refreshInProgress }"></span>
+              <span>Refresh</span>
+            </button>
           </div>
         </div>
         
@@ -85,19 +91,31 @@
             </div>
           </div>
           
-          <!-- Printer Status Grid -->
+          <!-- Printer Status Grid - with improved loading state handling -->
           <div class="card table-card">
             <h3>Printer Status</h3>
-            <div v-if="loading" class="loading-container">
+            
+            <!-- Only show loading during initial load, never for background refreshes -->
+            <div v-if="initialLoading" class="loading-container">
               <div class="loading-spinner"></div>
               <p>Loading printer data...</p>
             </div>
-            <div v-else-if="error" class="error-container">
+            
+            <!-- Show error only if we have no data -->
+            <div v-else-if="error && !hasInitialData" class="error-container">
               <p>{{ error }}</p>
-              <button @click="fetchPrinters" class="retry-btn">Retry</button>
+              <button @click="refreshAllPrinters" class="retry-btn">Retry</button>
             </div>
-            <div v-else class="printer-grid">
+            
+            <!-- Always show printer grid once we have initial data, regardless of background refreshes -->
+            <div v-else-if="hasInitialData" class="printer-grid">
               <div v-for="printer in filteredPrinters" :key="printer.printer_id" class="printer-card">
+                <!-- Connection status indicator -->
+                <div class="connection-indicator" :class="getConnectionClass(printer)">
+                  <span class="indicator-dot"></span>
+                  <span class="indicator-text">{{ getConnectionText(printer) }}</span>
+                </div>
+                
                 <div class="printer-header">
                   <div class="printer-title">
                     <div class="printer-icon">
@@ -111,6 +129,21 @@
                 </div>
                 
                 <div class="printer-body">
+                  <!-- Individual printer loading state -->
+                  <div v-if="printer._loading" class="printer-loading">
+                    <div class="mini-loading-spinner"></div>
+                    <p>Updating...</p>
+                  </div>
+                  
+                  <!-- Data age warning -->
+                  <div v-if="printer._stale && !printer._loading" class="stale-data-warning">
+                    <span class="warning-icon">⚠️</span>
+                    <span>Data may be outdated</span>
+                    <button @click="refreshSinglePrinter(printer)" class="mini-refresh-btn">
+                      <span class="mini-refresh-icon"></span>
+                    </button>
+                  </div>
+                  
                   <!-- Current print information -->
                   <div v-if="printer.print_stats.filename" class="current-task">
                     <div class="task-info">
@@ -163,6 +196,14 @@
                 </div>
                 
                 <div class="printer-footer">
+                  <button 
+                    @click="refreshSinglePrinter(printer)" 
+                    class="action-btn refresh-single-btn"
+                    :disabled="printer._loading"
+                  >
+                    <span class="refresh-icon-small" :class="{ 'rotating': printer._loading }"></span>
+                    <span>Refresh</span>
+                  </button>
                   <button @click="viewPrinterDetails(printer)" class="action-btn details-btn">Details</button>
                   <button @click="managePrinter(printer)" class="action-btn manage-btn">Manage</button>
                 </div>
@@ -222,12 +263,15 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
 
 const router = useRouter()
 const searchQuery = ref('')
-const loading = ref(true)
+const initialLoading = ref(true) // For initial loads only
+const backgroundRefreshing = ref(false) // For background refreshes
 const error = ref(null)
+const hasInitialData = ref(false)
+const lastRefreshTime = ref(Date.now())
+const refreshInProgress = ref(false)
 
 // Data states
 const printers = ref([])
@@ -235,61 +279,256 @@ const filteredPrinters = ref([])
 const filamentInventory = ref([])
 const maintenanceTasks = ref([])
 
-// Fetch printers from the direct-connect endpoint
-const fetchPrinters = async () => {
-  loading.value = true
-  error.value = null
+/**
+ * Fetch printers with silent background refresh support
+ * @param {boolean} showLoading - Whether to show loading indicators (true for manual refresh, false for background)
+ * @returns {Promise<void>}
+ */
+const fetchPrinters = async (showLoading = true) => {
+  // Prevent concurrent refreshes
+  if (refreshInProgress.value) {
+    console.log('Refresh already in progress, skipping');
+    return;
+  }
+  
+  refreshInProgress.value = true;
+  
+  // Update loading state based on refresh type
+  if (showLoading) {
+    // Only show loading indicator if this is initial load or manual refresh
+    // AND we don't already have data
+    if (!hasInitialData.value) {
+      initialLoading.value = true;
+    }
+    error.value = null;
+  } else {
+    // This is a background refresh - just set the background flag
+    backgroundRefreshing.value = true;
+  }
   
   try {
-    // Try our direct connection API first
-    const response = await fetch('/api/printers/direct-connect')
+    // Ensure URL is properly formatted - use absolute path with origin
+    const baseUrl = window.location.origin;
+    const apiEndpoint = '/api/printers/direct-connect';
+    const fullUrl = `${baseUrl}${apiEndpoint}`;
+    
+    console.log(`Fetching printers from: ${fullUrl}`);
+    
+    const response = await fetch(fullUrl, {
+      // Add cache control headers to prevent caching
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`)
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
     
-    const data = await response.json()
+    const data = await response.json();
     
     if (Array.isArray(data)) {
-      printers.value = data
-      filteredPrinters.value = [...data]
+      console.log(`Successfully loaded ${data.length} printers`);
+      
+      // Track last successful update time
+      const updateTime = Date.now();
+      
+      // Update printer data while preserving UI states
+      if (printers.value.length > 0) {
+        // Merge new data with existing data to avoid UI flickering
+        data.forEach(newPrinter => {
+          const existingIndex = printers.value.findIndex(p => p.printer_id === newPrinter.printer_id);
+          
+          if (existingIndex >= 0) {
+            // Preserve UI state variables from existing printer
+            const existingPrinter = printers.value[existingIndex];
+            
+            // Merge the data - update printer status but keep UI state
+            printers.value[existingIndex] = {
+              ...newPrinter,
+              _lastUpdated: updateTime,
+              _stale: false,
+              // Only keep _loading if this is a specific printer refresh
+              _loading: existingPrinter._loading && !showLoading
+            };
+          } else {
+            // New printer not previously in the list
+            printers.value.push({
+              ...newPrinter,
+              _lastUpdated: updateTime,
+              _stale: false,
+              _loading: false
+            });
+          }
+        });
+        
+        // Filter out printers that no longer exist
+        printers.value = printers.value.filter(printer => 
+          data.some(newPrinter => newPrinter.printer_id === printer.printer_id)
+        );
+      } else {
+        // Initial load - no existing data to merge
+        printers.value = data.map(printer => ({
+          ...printer,
+          _lastUpdated: updateTime,
+          _stale: false,
+          _loading: false
+        }));
+      }
+      
+      // Update filtered printers based on search query
+      filterPrinters();
+      
+      // Data successfully loaded
+      hasInitialData.value = true;
+      lastRefreshTime.value = updateTime;
     } else if (data.body && data.body.error) {
-      throw new Error(data.body.error)
+      throw new Error(data.body.error);
     } else {
-      throw new Error('Invalid response format from API')
+      throw new Error('Invalid response format from API');
     }
   } catch (err) {
-    console.error('Error fetching printers:', err)
-    error.value = 'Failed to fetch printer status. Please try again.'
+    console.error('Error fetching printers:', err);
+    
+    // Only show error messages for manual refreshes
+    if (showLoading) {
+      error.value = `Failed to fetch printer status: ${err.message}`;
+    }
+    
+    // Just silently mark data as stale for background refreshes
+    if (printers.value.length > 0) {
+      printers.value.forEach(printer => {
+        printer._stale = true;
+      });
+    }
   } finally {
-    loading.value = false
+    // Clear the appropriate loading state
+    if (showLoading) {
+      initialLoading.value = false;
+    } else {
+      backgroundRefreshing.value = false;
+    }
+    
+    // Always mark refresh as complete
+    refreshInProgress.value = false;
   }
-}
+};
+
+/**
+ * Refresh a single printer
+ * @param {Object} printer - The printer to refresh
+ * @returns {Promise<void>}
+ */
+const refreshSinglePrinter = async (printer) => {
+  // Prevent multiple refreshes of the same printer
+  if (printer._loading) return;
+  
+  // Set loading state for just this printer
+  printer._loading = true;
+  
+  try {
+    // Ensure URL is properly formatted
+    const baseUrl = window.location.origin;
+    const apiEndpoint = `/api/printers/direct-connect/${printer.printer_id}`;
+    const fullUrl = `${baseUrl}${apiEndpoint}`;
+    
+    console.log(`Refreshing printer ${printer.printer_name} from: ${fullUrl}`);
+    
+    // Make API call to fetch just this printer
+    const response = await fetch(fullUrl, {
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data) {
+      const updateTime = Date.now();
+      
+      // Find the printer in our array
+      const index = printers.value.findIndex(p => p.printer_id === printer.printer_id);
+      
+      if (index >= 0) {
+        // Update just this printer with new data
+        printers.value[index] = {
+          ...data,
+          _lastUpdated: updateTime,
+          _stale: false,
+          _loading: false
+        };
+        
+        // Re-apply filter if search is active
+        if (searchQuery.value) {
+          filterPrinters();
+        }
+      }
+    } else {
+      throw new Error('Invalid response format for single printer refresh');
+    }
+  } catch (err) {
+    console.error(`Error refreshing printer ${printer.printer_name}:`, err);
+    // Mark as stale on error
+    printer._stale = true;
+  } finally {
+    // Always clear loading state
+    printer._loading = false;
+  }
+};
+
+// Manual refresh function
+const refreshAllPrinters = () => {
+  fetchPrinters(true);
+};
 
 // Filter printers based on search query
 const filterPrinters = () => {
   if (!searchQuery.value) {
-    filteredPrinters.value = [...printers.value]
-    return
+    filteredPrinters.value = [...printers.value];
+    return;
   }
   
-  const query = searchQuery.value.toLowerCase()
+  const query = searchQuery.value.toLowerCase();
   filteredPrinters.value = printers.value.filter(printer => 
     printer.printer_name.toLowerCase().includes(query)
-  )
-}
+  );
+};
+
+// Get connection status class
+const getConnectionClass = (printer) => {
+  if (printer._loading) return 'connecting';
+  if (printer.print_stats.state === 'offline') return 'disconnected';
+  if (printer._stale) return 'unstable';
+  return 'connected';
+};
+
+// Get connection status text
+const getConnectionText = (printer) => {
+  if (printer._loading) return 'Connecting...';
+  if (printer.print_stats.state === 'offline') return 'Disconnected';
+  if (printer._stale) return 'Unstable Connection';
+  return 'Connected';
+};
 
 // Active printers calculation
 const activePrinters = computed(() => {
   return printers.value.filter(printer => 
     printer.print_stats.state === 'printing' || 
     printer.print_stats.state === 'paused'
-  ).length
-})
+  ).length;
+});
 
 const activePrinterPercentage = computed(() => {
-  return printers.value.length ? Math.round((activePrinters.value / printers.value.length) * 100) : 0
-})
+  return printers.value.length ? Math.round((activePrinters.value / printers.value.length) * 100) : 0;
+});
 
 // Get color code from color name
 const getColorCode = (color) => {
@@ -309,169 +548,139 @@ const getColorCode = (color) => {
     gray: '#808080',
     silver: '#C0C0C0',
     gold: '#FFD700'
-  }
+  };
   
-  return colorMap[color?.toLowerCase()] || '#777777'
-}
+  return colorMap[color?.toLowerCase()] || '#777777';
+};
 
 // Format time remaining to display as hours and minutes
 const formatTimeRemaining = (seconds) => {
-  if (!seconds) return ''
+  if (!seconds) return '';
   
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
   
   if (hours > 0) {
-    return `${hours}h ${minutes}m`
+    return `${hours}h ${minutes}m`;
   }
-  return `${minutes}m`
-}
+  return `${minutes}m`;
+};
 
 // Format date for display
 const formatDate = (dateString) => {
-  if (!dateString) return ''
+  if (!dateString) return '';
   
-  const date = new Date(dateString)
-  const options = { month: 'short', day: 'numeric' }
-  return date.toLocaleDateString('en-US', options)
-}
+  const date = new Date(dateString);
+  const options = { month: 'short', day: 'numeric' };
+  return date.toLocaleDateString('en-US', options);
+};
 
 // View printer details
 const viewPrinterDetails = (printer) => {
-  router.push(`/printer/${printer.printer_id}`)
-}
+  router.push(`/printer/${printer.printer_id}`);
+};
 
 // Manage printer
 const managePrinter = (printer) => {
-  router.push(`/printer/${printer.printer_id}/manage`)
-}
+  router.push(`/printer/${printer.printer_id}/manage`);
+};
 
-// Get filament inventory from API
+// Fetch filament inventory from API - simplified here
 const fetchFilamentInventory = async () => {
   try {
-    const response = await fetch('/api/filaments/inventory')
+    const baseUrl = window.location.origin;
+    const response = await fetch(`${baseUrl}/api/filaments/inventory`);
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    
-    if (Array.isArray(data)) {
-      filamentInventory.value = data
-    } else {
-      throw new Error('Invalid response format from filament inventory API')
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        filamentInventory.value = data;
+      }
     }
   } catch (err) {
-    console.error('Error fetching filament inventory:', err)
-    // Set default data if API fails
-    filamentInventory.value = []
+    console.error('Error fetching filament inventory:', err);
   }
-}
+};
 
-// Reorder filament
+// Reorder filament - simplified here
 const reorderFilament = async (filament) => {
   try {
-    const response = await fetch('/api/filaments/reorder', {
+    const baseUrl = window.location.origin;
+    await fetch(`${baseUrl}/api/filaments/reorder`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        filament_id: filament.filament_id 
-      }),
-    })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filament_id: filament.filament_id })
+    });
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`)
-    }
-    
-    // Update UI with success message
-    alert(`Reordering ${filament.name}...`)
-    
-    // Refresh filament data
-    await fetchFilamentInventory()
+    alert(`Reordering ${filament.name}...`);
+    await fetchFilamentInventory();
   } catch (err) {
-    console.error('Error reordering filament:', err)
-    alert(`Failed to reorder ${filament.name}. Please try again.`)
+    console.error('Error reordering filament:', err);
+    alert(`Failed to reorder ${filament.name}`);
   }
-}
+};
 
-// Fetch maintenance tasks from API
+// Fetch maintenance tasks from API - simplified here
 const fetchMaintenanceTasks = async () => {
   try {
-    const response = await fetch('/api/maintenance/tasks')
+    const baseUrl = window.location.origin;
+    const response = await fetch(`${baseUrl}/api/maintenance/tasks`);
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    
-    if (Array.isArray(data)) {
-      maintenanceTasks.value = data
-    } else {
-      throw new Error('Invalid response format from maintenance API')
+    if (response.ok) {
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        maintenanceTasks.value = data;
+      }
     }
   } catch (err) {
-    console.error('Error fetching maintenance tasks:', err)
-    // Set empty array if API fails
-    maintenanceTasks.value = []
+    console.error('Error fetching maintenance tasks:', err);
   }
-}
+};
 
-// Complete maintenance task
+// Complete maintenance task - simplified here
 const completeTask = async (task) => {
   try {
-    const response = await fetch('/api/maintenance/complete', {
+    const baseUrl = window.location.origin;
+    await fetch(`${baseUrl}/api/maintenance/complete`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ 
-        task_id: task.task_id 
-      }),
-    })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task_id: task.task_id })
+    });
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`)
-    }
-    
-    // Update UI immediately
-    task.status = 'completed'
-    
-    // Refresh maintenance data
-    await fetchMaintenanceTasks()
+    task.status = 'completed';
+    await fetchMaintenanceTasks();
   } catch (err) {
-    console.error('Error completing task:', err)
-    alert(`Failed to complete task: ${task.description}. Please try again.`)
-    // Revert UI change if API call failed
-    task.status = 'pending'
+    console.error('Error completing task:', err);
+    alert(`Failed to complete task: ${task.description}`);
+    task.status = 'pending';
   }
-}
+};
 
 // Handle logout
 const handleLogout = () => {
-  router.push('/login')
-}
+  router.push('/login');
+};
 
 // Lifecycle hooks
 onMounted(() => {
-  // Fetch all data when component mounts
-  fetchPrinters()
-  fetchFilamentInventory()
-  fetchMaintenanceTasks()
+  // Initial data load with loading indicator
+  fetchPrinters(true);
   
-  // Set up a timer to refresh printer data periodically (every 10 seconds)
+  // Also fetch filament inventory and maintenance tasks
+  fetchFilamentInventory();
+  fetchMaintenanceTasks();
+  
+  // Set up a timer for background refreshes
   const refreshInterval = setInterval(() => {
-    fetchPrinters()
-  }, 10000)
+    // Silent background refresh - no loading indicators
+    fetchPrinters(false);
+  }, 30000); // Every 30 seconds
   
-  // Clean up interval when component is unmounted
+  // Clean up on unmount
   onUnmounted(() => {
-    clearInterval(refreshInterval)
-  })
-})
+    clearInterval(refreshInterval);
+  });
+});
 </script>
 
 <style scoped>
