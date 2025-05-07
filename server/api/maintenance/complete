@@ -1,0 +1,81 @@
+// server/api/maintenance/complete.ts
+import { defineEventHandler, readBody } from 'h3'; // Import readBody from h3
+import { db } from '../../utils/db';
+
+/**
+ * Interface for the request body
+ */
+interface CompleteTaskRequest {
+  task_id: number;
+}
+
+/**
+ * Interface for query result
+ */
+interface QueryResult {
+  affectedRows?: number;
+  insertId?: number;
+}
+
+/**
+ * Mark a maintenance task as completed
+ */
+export default defineEventHandler(async (event) => {
+  try {
+    // Get request body
+    const body = await readBody<CompleteTaskRequest>(event);
+    
+    if (!body || !body.task_id) {
+      return { 
+        statusCode: 400, 
+        body: { error: 'Missing task_id in request body' } 
+      };
+    }
+    
+    // Update task status in database
+    const [result] = await db.query<QueryResult>(`
+      UPDATE maintenance_task 
+      SET 
+        status = 'completed',
+        completed_at = NOW(),
+        completed_by = ? 
+      WHERE task_id = ?
+    `, [
+      event.context.user?.user_id || null, // Get user ID from request context if available
+      body.task_id
+    ]);
+    
+    // Check if task was found and updated
+    if (!result || result.affectedRows === 0) {
+      return { 
+        statusCode: 404, 
+        body: { error: 'Task not found' } 
+      };
+    }
+    
+    // Insert a record in the maintenance history table
+    await db.query(`
+      INSERT INTO maintenance_history (
+        task_id, 
+        completed_at, 
+        completed_by, 
+        notes
+      ) VALUES (?, NOW(), ?, 'Completed via dashboard')
+    `, [
+      body.task_id,
+      event.context.user?.user_id || null // Get user ID from request context if available
+    ]);
+    
+    return { 
+      statusCode: 200, 
+      body: { message: 'Task marked as completed successfully' } 
+    };
+    
+  } catch (error) {
+    console.error('Error completing maintenance task:', error);
+    return { 
+      statusCode: 500, 
+      body: { error: 'Failed to complete maintenance task' } 
+    };
+  }
+});

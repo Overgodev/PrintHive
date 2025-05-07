@@ -48,8 +48,6 @@ initDatabase()
   });
 
 
-// Add these functions to your existing db.ts file or create a new utility file
-
 // Function to get filament stock information
 export const getFilamentStock = async () => {
   try {
