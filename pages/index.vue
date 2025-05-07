@@ -3,7 +3,7 @@
     <div class="login-container">
       <div class="illustration-section">
         <div class="logo-container">
-          <img src="/logo.png" alt="Company Logo" class="company-logo" />
+          <img src="/pic/logo.png" alt="Company Logo" class="company-logo" />
         </div>
       </div>
       <div class="login-section">

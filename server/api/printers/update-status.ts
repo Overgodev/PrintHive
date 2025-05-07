@@ -26,11 +26,13 @@ interface MoonrakerPrinterStatus {
 interface PrinterUpdateData {
   printerId: number;
   status: string;
-  currentJob?: string;
-  progress?: number;
-  extruderTemp?: number;
-  bedTemp?: number;
+  currentJob?: string | null;
+  progress?: number | null;
+  extruderTemp?: number | null;
+  bedTemp?: number | null;
 }
+
+
 
 /**
  * Updates the printer status in the database
@@ -106,10 +108,19 @@ function mapPrinterState(moonrakerState: string): string {
 /**
  * Update print job status if a job is active
  */
+
+/**
+ * Update print job status if a job is active
+ */
 async function updatePrintJobStatus(printerId: number, filename: string, printStats: any): Promise<void> {
   try {
-    // Find the job in the print queue
-    const [jobs] = await db.query(`
+    // Define the expected job structure
+    interface JobRow {
+      job_id: number;
+    }
+    
+    // Properly type the query result
+    const [jobs] = await db.query<JobRow[]>(`
       SELECT job_id
       FROM print_queue
       WHERE printer_id = ? AND job_name = ? AND status = 'printing'
@@ -117,7 +128,7 @@ async function updatePrintJobStatus(printerId: number, filename: string, printSt
       LIMIT 1
     `, [printerId, filename]);
     
-    if (jobs.length > 0) {
+    if (jobs && jobs.length > 0) {
       const jobId = jobs[0].job_id;
       
       // Update the job progress
@@ -145,35 +156,35 @@ async function updatePrintJobStatus(printerId: number, filename: string, printSt
  * Main function to update all printers
  */
 async function updateAllPrinters(): Promise<void> {
-    try {
-      // Get all printers from the database with proper typing
-      interface PrinterRow {
-        printer_id: number;
-        printer_name: string;
-        ip_address: string | null;
-      }
+  try {
+    // Get all printers from the database with proper typing
+    interface PrinterRow {
+      printer_id: number;
+      printer_name: string;
+      ip_address: string | null;
+    }
+    
+    // Correctly specify the return type from the query
+    const [printers] = await db.query<PrinterRow[]>(`
+      SELECT 
+        printer_id,
+        printer_name,
+        ip_address
+      FROM printer
+      WHERE ip_address IS NOT NULL
+    `);
+
+    console.log(`Found ${printers.length} printers to update`);
+    
+    // Now TypeScript knows printers is an array of PrinterRow objects
+    for (const printer of printers) {
+      try {
+        // Skip if no IP address
+        if (!printer.ip_address) {
+          console.log(`Skipping printer ${printer.printer_name} - no IP address`);
+          continue;
+        }
       
-      // Correctly specify the return type from the query
-      const [printers] = await db.query<PrinterRow[]>(`
-        SELECT 
-          printer_id,
-          printer_name,
-          ip_address
-        FROM printer
-        WHERE ip_address IS NOT NULL
-      `);
-  
-      console.log(`Found ${printers.length} printers to update`);
-      
-      // Now TypeScript knows printers is an array of PrinterRow objects
-      for (const printer of printers) {
-        try {
-          // Skip if no IP address
-          if (!printer.ip_address) {
-            console.log(`Skipping printer ${printer.printer_name} - no IP address`);
-            continue;
-          }
-        
         // Fetch status from Moonraker
         const status = await fetchMoonrakerStatus(printer.ip_address);
         
@@ -181,8 +192,8 @@ async function updateAllPrinters(): Promise<void> {
         const updateData: PrinterUpdateData = {
           printerId: printer.printer_id,
           status: mapPrinterState(status.print_stats.state),
-          currentJob: status.print_stats.filename || null,
-          progress: status.print_stats.progress * 100 || null,
+          currentJob: status.print_stats.filename || null, // Explicitly use null
+          progress: status.print_stats.progress !== undefined ? status.print_stats.progress * 100 : null,
           extruderTemp: status.extruder?.temperature || null,
           bedTemp: status.heater_bed?.temperature || null
         };
