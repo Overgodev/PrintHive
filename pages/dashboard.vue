@@ -1,9 +1,15 @@
-<template>
+/* Printer grid for consistent layout */
+.printer-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 15px;
+}<template>
   <div class="dashboard-wrapper">
     <div class="dashboard-container">
+      <!-- Sidebar Navigation -->
       <div class="sidebar">
         <div class="logo-container">
-          <img src="/logo.png" alt="Company Logo" class="company-logo" />
+          <img src="/logo.png" alt="PrintHive Logo" class="company-logo" />
         </div>
         <div class="nav-links">
           <router-link to="/dashboard" class="nav-item active">
@@ -33,6 +39,7 @@
       </div>
       
       <div class="main-content">
+        <!-- Main Header -->
         <div class="header">
           <h1>PrintHive</h1>
           <div class="actions-container">
@@ -44,10 +51,6 @@
                 @input="filterPrinters"
               />
             </div>
-            <button @click="refreshAllPrinters" class="refresh-btn" :disabled="initialLoading || refreshInProgress">
-              <span class="refresh-icon" :class="{ 'rotating': initialLoading || refreshInProgress }"></span>
-              <span>Refresh</span>
-            </button>
           </div>
         </div>
         
@@ -109,105 +112,83 @@
             
             <!-- Always show printer grid once we have initial data, regardless of background refreshes -->
             <div v-else-if="hasInitialData" class="printer-grid">
-              <div v-for="printer in filteredPrinters" :key="printer.printer_id" class="printer-card">
-                <!-- Connection status indicator -->
-                <div class="connection-indicator" :class="getConnectionClass(printer)">
-                  <span class="indicator-dot"></span>
-                  <span class="indicator-text">{{ getConnectionText(printer) }}</span>
-                </div>
-                
-                <div class="printer-header">
-                  <div class="printer-title">
-                    <div class="printer-icon">
-                      <i :class="['status-indicator', printer.print_stats.state]"></i>
-                    </div>
-                    <h4>{{ printer.printer_name }}</h4>
-                  </div>
-                  <div class="printer-status-badge" :class="printer.print_stats.state">
-                    {{ printer.print_stats.state }}
-                  </div>
-                </div>
-                
-                <div class="printer-body">
-                  <!-- Individual printer loading state -->
-                  <div v-if="printer._loading" class="printer-loading">
-                    <div class="mini-loading-spinner"></div>
-                    <p>Updating...</p>
-                  </div>
-                  
-                  <!-- Data age warning -->
-                  <div v-if="printer._stale && !printer._loading" class="stale-data-warning">
-                    <span class="warning-icon">⚠️</span>
-                    <span>Data may be outdated</span>
-                    <button @click="refreshSinglePrinter(printer)" class="mini-refresh-btn">
-                      <span class="mini-refresh-icon"></span>
-                    </button>
-                  </div>
-                  
-                  <!-- Current print information -->
-                  <div v-if="printer.print_stats.filename" class="current-task">
-                    <div class="task-info">
-                      <p class="task-name">Printing: {{ printer.print_stats.filename }}</p>
-                      <div class="temperature-info">
-                        <span class="temp-item">
-                          <i class="temp-icon hotend"></i> {{ printer.extruder.temperature.toFixed(1) }}°C
-                        </span>
-                        <span class="temp-item">
-                          <i class="temp-icon bed"></i> {{ printer.heater_bed.temperature.toFixed(1) }}°C
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div class="print-progress" v-if="printer.print_stats.progress !== undefined">
+                <!-- Updated Printer Card with Reduced Dead Space -->
+                <div v-for="printer in filteredPrinters" :key="printer.printer_id" class="printer-card">
+                  <!-- Top status/progress bar -->
+                  <div class="printer-top-bar">
+                    <div v-if="printer.print_stats.state === 'printing'" class="print-progress-top">
                       <div class="progress-bar">
                         <div 
                           class="progress-value" 
                           :style="{ width: (printer.print_stats.progress * 100) + '%' }"
                         ></div>
                       </div>
-                      <div class="progress-details">
-                        <span class="progress-percentage">{{ Math.round(printer.print_stats.progress * 100) }}%</span>
-                        <span v-if="printer.print_stats.time_remaining" class="time-remaining">
-                          {{ formatTimeRemaining(printer.print_stats.time_remaining) }} remaining
-                        </span>
+                      <div class="progress-percentage">{{ Math.round(printer.print_stats.progress * 100) }}%</div>
+                    </div>
+                    <div v-else class="printer-status-top" :class="printer.print_stats.state">
+                      {{ printer.print_stats.state.toUpperCase() }}
+                    </div>
+                  </div>
+                  
+                  <!-- Main content area - more compact design -->
+                  <div class="printer-body">
+                    <div class="printer-content">
+                      <!-- Printer name -->
+                      <h4 class="printer-name">{{ printer.printer_name }}</h4>
+                      
+                      <!-- Temperature and Job Info - Side by Side -->
+                      <div class="printer-info-grid">
+                        <!-- LEFT: Temperature indicators -->
+                        <div class="temp-container">
+                          <div class="temp-item">
+                            <i class="temp-icon hotend" :style="{ backgroundColor: getTemperatureIconColor(printer.extruder.temperature) }"></i>
+                            <span class="temp-value">{{ printer.extruder.temperature.toFixed(1) }}°C</span>
+                          </div>
+                          <div class="temp-item">
+                            <i class="temp-icon bed" :style="{ backgroundColor: getTemperatureIconColor(printer.heater_bed.temperature) }"></i>
+                            <span class="temp-value">{{ printer.heater_bed.temperature.toFixed(1) }}°C</span>
+                          </div>
+                        </div>
+                        
+                        <!-- RIGHT: Job, Filament, Connection -->
+                        <div class="status-container">
+                          <!-- Current Print Job -->
+                          <div class="job-info">
+                            <div v-if="printer.print_stats.filename" class="printing-file">
+                              {{ printer.print_stats.filename }}
+                            </div>
+                            <div v-else class="printing-file no-file">
+                              No active print job
+                            </div>
+                          </div>
+                          
+                          <!-- Filament and Connection in same row -->
+                          <div class="meta-info">
+                            <!-- Filament Spool -->
+                            <div class="filament-indicator">
+                              <div class="filament-color" 
+                                  :style="{ backgroundColor: getColorCode(printer.filaments && printer.filaments.length > 0 ? printer.filaments[0].color : null) }">
+                              </div>
+                              <span class="filament-type">{{ printer.filaments && printer.filaments.length > 0 ? printer.filaments[0].type || 'PLA' : 'No filament' }}</span>
+                            </div>
+                            
+                            <!-- Connection Status -->
+                            <div class="connection-indicator" :class="getConnectionClass(printer)">
+                              <span class="indicator-dot"></span>
+                              <span class="indicator-text">{{ getConnectionText(printer) }}</span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
                   
-                  <div v-if="printer.filaments && printer.filaments.length > 0" class="filament-levels-grid">
-                    <div v-for="(filament, fIndex) in printer.filaments" :key="fIndex" class="filament-grid-item">
-                      <div class="filament-label-container">
-                        <span class="filament-label">{{ filament.color }}</span>
-                        <span class="filament-percentage">{{ filament.level }}%</span>
-                      </div>
-                      <div class="progress-bar">
-                        <div 
-                          class="progress-value" 
-                          :style="{ width: filament.level + '%', backgroundColor: getColorCode(filament.color) }"
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <!-- If no filaments data is available -->
-                  <div v-else class="no-filament-data">
-                    <p>No filament data available</p>
+                  <!-- Printer Footer with Detail and Manage buttons -->
+                  <div class="printer-footer">
+                    <button @click="viewPrinterDetails(printer)" class="action-btn details-btn">Detail</button>
+                    <button @click="managePrinter(printer)" class="action-btn manage-btn">Manage</button>
                   </div>
                 </div>
-                
-                <div class="printer-footer">
-                  <button 
-                    @click="refreshSinglePrinter(printer)" 
-                    class="action-btn refresh-single-btn"
-                    :disabled="printer._loading"
-                  >
-                    <span class="refresh-icon-small" :class="{ 'rotating': printer._loading }"></span>
-                    <span>Refresh</span>
-                  </button>
-                  <button @click="viewPrinterDetails(printer)" class="action-btn details-btn">Details</button>
-                  <button @click="managePrinter(printer)" class="action-btn manage-btn">Manage</button>
-                </div>
-              </div>
             </div>
           </div>
           
@@ -502,7 +483,9 @@ const filterPrinters = () => {
   );
 };
 
-// Get connection status class
+/* Adjust the getConnectionClass and getConnectionText functions to work with the new layout */
+
+// Get connection status class for the new layout
 const getConnectionClass = (printer) => {
   if (printer._loading) return 'connecting';
   if (printer.print_stats.state === 'offline') return 'disconnected';
@@ -551,6 +534,47 @@ const getColorCode = (color) => {
   };
   
   return colorMap[color?.toLowerCase()] || '#777777';
+};
+
+// Get temperature icon color based on value - blue for cold to red for hot
+const getTemperatureIconColor = (temp) => {
+  // Define temperature ranges and corresponding colors
+  // Cold (0-30°C): Blue
+  // Medium (30-80°C): Gradient from blue to orange
+  // Hot (80-100°C): Orange to red
+  // Very hot (>100°C): Deep red
+  
+  if (temp <= 30) {
+    // Cold - Blue
+    return '#2196f3';
+  } else if (temp <= 80) {
+    // Medium - Blue to Orange gradient
+    // Calculate position in range (0-1)
+    const position = (temp - 30) / 50;
+    
+    // RGB components for blue: 33, 150, 243
+    // RGB components for orange: 255, 152, 0
+    const r = Math.round(33 + position * (255 - 33));
+    const g = Math.round(150 + position * (152 - 150));
+    const b = Math.round(243 + position * (0 - 243));
+    
+    return `rgb(${r}, ${g}, ${b})`;
+  } else if (temp <= 100) {
+    // Hot - Orange to Red gradient
+    // Calculate position in range (0-1)
+    const position = (temp - 80) / 20;
+    
+    // RGB components for orange: 255, 152, 0
+    // RGB components for red: 244, 67, 54
+    const r = Math.round(255 + position * (244 - 255));
+    const g = Math.round(152 + position * (67 - 152));
+    const b = Math.round(0 + position * (54 - 0));
+    
+    return `rgb(${r}, ${g}, ${b})`;
+  } else {
+    // Very hot - Deep red
+    return '#e74c3c';
+  }
 };
 
 // Format time remaining to display as hours and minutes
@@ -827,6 +851,12 @@ onMounted(() => {
   color: #e0e0e0;
 }
 
+.actions-container {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
 .search-container {
   width: 300px;
 }
@@ -843,6 +873,79 @@ onMounted(() => {
 .search-container input:focus {
   outline: none;
   border-color: #1e88e5;
+}
+
+.refresh-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 15px;
+  background-color: #1e88e5;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.refresh-btn:hover {
+  background-color: #1976d2;
+}
+
+.refresh-btn:disabled {
+  background-color: #555;
+  color: #999;
+  cursor: not-allowed;
+}
+
+.refresh-icon {
+  width: 16px;
+  height: 16px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  position: relative;
+}
+
+.refresh-icon::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.refresh-icon-small {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  position: relative;
+  display: inline-block;
+}
+
+.refresh-icon-small::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  border-top: 1.5px solid currentColor;
+  border-right: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.rotating {
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .dashboard-grid {
@@ -990,11 +1093,11 @@ onMounted(() => {
   font-size: 14px;
 }
 
-/* Printer Grid */
+/* Updated Printer Card Styles with Reduced Dead Space */
 .printer-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+  gap: 15px;
 }
 
 .printer-card {
@@ -1004,143 +1107,145 @@ onMounted(() => {
   border: 1px solid #333;
   display: flex;
   flex-direction: column;
+  /* Reduced minimum height */
+  min-height: 200px;
 }
 
-.printer-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px;
+/* Top status/progress bar */
+.printer-top-bar {
+  padding: 0;
   background-color: #222;
   border-bottom: 1px solid #333;
-}
-
-.printer-title {
+  position: relative;
+  height: 30px; /* Reduced height */
   display: flex;
   align-items: center;
-  gap: 10px;
 }
 
-.printer-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background-color: #333;
+.printer-status-top {
   display: flex;
+  align-items: center;
   justify-content: center;
-  align-items: center;
+  height: 100%;
+  width: 100%;
+  color: white;
+  font-weight: 500;
+  font-size: 14px; /* Reduced font size */
+  letter-spacing: 1px;
+}
+
+.printer-status-top.printing {
+  background-color: #4caf50; /* Green */
+}
+
+.printer-status-top.idle {
+  background-color: #2196f3; /* Blue */
+}
+
+.printer-status-top.paused {
+  background-color: #ff9800; /* Orange */
+}
+
+.printer-status-top.error,
+.printer-status-top.offline {
+  background-color: #f44336; /* Red */
+}
+
+.print-progress-top {
+  width: 100%;
+  height: 100%;
   position: relative;
 }
 
-.status-indicator {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background-color: #777;
+.print-progress-top .progress-bar {
+  height: 100%;
+  background-color: #333;
+  border-radius: 0;
+  overflow: hidden;
 }
 
-.status-indicator.printing {
-  background-color: #4caf50;
+.print-progress-top .progress-value {
+  height: 100%;
+  background-color: #4caf50; /* Green for printing */
+  border-radius: 0;
 }
 
-.status-indicator.idle {
-  background-color: #2196f3;
-}
-
-.status-indicator.paused {
-  background-color: #ff9800;
-}
-
-.status-indicator.error,
-.status-indicator.offline {
-  background-color: #f44336;
-}
-
-.printer-title h4 {
-  margin: 0;
-  font-size: 16px;
+.print-progress-top .progress-percentage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
   font-weight: 500;
+  font-size: 14px; /* Reduced font size */
+  z-index: 2;
+  text-shadow: 0 0 3px rgba(0,0,0,0.7);
 }
 
-.printer-status-badge {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  text-transform: uppercase;
-  font-weight: 500;
-}
-
-.printer-status-badge.printing {
-  background-color: #4caf50;
-  color: #1a1a1a;
-}
-
-.printer-status-badge.idle {
-  background-color: #2196f3;
-  color: #1a1a1a;
-}
-
-.printer-status-badge.paused {
-  background-color: #ff9800;
-  color: #1a1a1a;
-}
-
-.printer-status-badge.error,
-.printer-status-badge.offline {
-  background-color: #f44336;
-  color: #1a1a1a;
-}
-
+/* Main content with much tighter padding */
 .printer-body {
   flex: 1;
-  padding: 15px;
-}
-
-.current-task {
-  margin-bottom: 15px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #333;
-}
-
-.task-info {
+  padding: 8px; /* Further reduced padding */
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
+  flex-direction: column;
 }
 
-.task-name {
-  font-size: 14px;
+.printer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px; /* Further reduced gap */
+}
+
+.printer-name {
+  margin: 0 0 4px 0; /* Reduced bottom margin */
+  font-size: 16px;
+  font-weight: 500;
   color: #e0e0e0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 65%;
+  padding-left: 2px; /* Small left padding for better alignment */
 }
 
-.temperature-info {
+/* New grid layout for printer info */
+.printer-info-grid {
+  display: grid;
+  grid-template-columns: 80px 1fr; /* Slightly smaller fixed width for temp column */
+  gap: 8px; /* Reduced gap */
+  margin-top: 2px; /* Further reduced margin */
+  align-items: start; /* Align items to the top */
+}
+
+.temp-container {
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px; /* Further reduced gap */
+  width: 80px; /* Reduced width for temperature column */
 }
 
 .temp-item {
-  font-size: 12px;
-  color: #a0a0a0;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px; /* Reduced gap between icon and text */
+  height: 20px; /* Reduced height for tighter spacing */
+  margin-left: 2px; /* Small left margin for better alignment */
 }
 
 .temp-icon {
-  width: 14px;
-  height: 14px;
-  background-color: #a0a0a0;
+  width: 16px; /* Reduced size */
+  height: 16px; /* Reduced size */
+  min-width: 16px; /* Ensure icon doesn't shrink */
   mask-size: contain;
   mask-repeat: no-repeat;
   mask-position: center;
   -webkit-mask-size: contain;
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-position: center;
+  border-radius: 3px; /* Reduced for consistency */
+}
+
+.temp-value {
+  font-size: 14px; /* Reduced font size */
+  color: #2196f3; /* Blue color for temperature values like in the screenshot */
+  font-weight: 600; /* Slightly bolder for better readability */
+  white-space: nowrap; /* Prevent wrapping */
 }
 
 .temp-icon.hotend {
@@ -1153,92 +1258,105 @@ onMounted(() => {
   -webkit-mask-image: url("/pic/icon/bed-icon.png");
 }
 
-.print-progress {
-  margin-top: 10px;
-}
-
-.progress-bar {
-  height: 8px;
-  background-color: #444;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.progress-value {
-  height: 100%;
-  background-color: #1e88e5;
-  border-radius: 4px;
-}
-
-.progress-details {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 5px;
-}
-
-.progress-percentage {
-  font-size: 14px;
-  font-weight: 500;
-  color: #e0e0e0;
-}
-
-.time-remaining {
-  font-size: 12px;
-  color: #a0a0a0;
-}
-
-.filament-levels-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-
-.filament-grid-item {
+.status-container {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 4px; /* Further reduced gap */
 }
 
-.filament-label-container {
+.job-info {
+  background-color: #2d2d2d;
+  padding: 8px 10px; /* Reduced padding */
+  border-radius: 4px; /* Reduced radius */
+  height: 36px; /* Fixed height for job info container */
   display: flex;
-  justify-content: space-between;
   align-items: center;
 }
 
-.filament-label {
-  font-size: 14px;
-  color: #a0a0a0;
-  text-transform: capitalize;
+.printing-file {
+  font-size: 13px; /* Reduced font size */
+  color: #e0e0e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%; /* Ensure text doesn't overflow container */
+  line-height: 1.2; /* Improved line height */
 }
 
-.filament-percentage {
-  font-size: 14px;
+.no-file {
+  color: #a0a0a0;
+  font-style: italic;
+}
+
+/* Meta info row - filament and connection in one row */
+.meta-info {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  height: 36px; /* Fixed height to match job info */
+}
+
+.filament-indicator, .connection-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px; /* Reduced gap */
+  background-color: #2d2d2d;
+  padding: 6px 8px; /* Reduced padding */
+  border-radius: 4px; /* Reduced radius */
+  white-space: nowrap;
+  height: 100%; /* Full height of container */
+  box-sizing: border-box;
+}
+
+.filament-color {
+  width: 12px; /* Reduced size */
+  height: 12px; /* Reduced size */
+  border-radius: 50%;
+}
+
+.filament-type, .indicator-text {
+  font-size: 12px; /* Reduced font size */
   color: #e0e0e0;
 }
 
-.no-filament-data {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 50px;
-  color: #777;
-  font-size: 14px;
+.indicator-dot {
+  width: 8px; /* Reduced size */
+  height: 8px; /* Reduced size */
+  border-radius: 50%;
 }
 
+/* Connection indicator styling */
+.connection-indicator.connected .indicator-dot {
+  background-color: #4caf50; /* Green */
+}
+
+.connection-indicator.connecting .indicator-dot {
+  background-color: #ff9800; /* Orange */
+  animation: blink 1s infinite;
+}
+
+.connection-indicator.disconnected .indicator-dot {
+  background-color: #f44336; /* Red */
+}
+
+.connection-indicator.unstable .indicator-dot {
+  background-color: #ff9800; /* Orange */
+}
+
+/* Printer Footer with buttons */
 .printer-footer {
   display: flex;
-  gap: 10px;
-  padding: 15px;
+  gap: 5px; /* Further reduced gap */
+  padding: 8px; /* Further reduced padding */
   border-top: 1px solid #333;
 }
 
 .action-btn {
   flex: 1;
-  padding: 8px 0;
+  padding: 6px 0; /* Reduced padding */
   border: none;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: 13px; /* Reduced font size */
   cursor: pointer;
   transition: background-color 0.3s ease;
 }
@@ -1253,12 +1371,12 @@ onMounted(() => {
 }
 
 .manage-btn {
-  background-color: #1e88e5;
+  background-color: #e74c3c; /* Red */
   color: white;
 }
 
 .manage-btn:hover {
-  background-color: #1976d2;
+  background-color: #c0392b;
 }
 
 /* Inventory and Maintenance Styles */
@@ -1279,7 +1397,7 @@ onMounted(() => {
   border-radius: 6px;
 }
 
-.filament-color {
+.inventory-item .filament-color {
   width: 24px;
   height: 24px;
   border-radius: 4px;
@@ -1295,7 +1413,7 @@ onMounted(() => {
   color: #e0e0e0;
 }
 
-.filament-type {
+.filament-info .filament-type {
   display: block;
   font-size: 13px;
   color: #a0a0a0;
@@ -1306,6 +1424,19 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   flex: 1;
+}
+
+.stock-level .progress-bar {
+  height: 8px;
+  background-color: #444;
+  border-radius: 4px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.stock-level .progress-value {
+  height: 100%;
+  border-radius: 4px;
 }
 
 .stock-percentage {
@@ -1443,4 +1574,9 @@ onMounted(() => {
 .retry-btn:hover {
   background-color: #1976d2;
 }
-  </style>
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+</style>
