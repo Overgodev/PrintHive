@@ -1,12 +1,19 @@
-import { Request, Response } from 'express';
-import { getFilamentStock } from '../../utils/db';
+import { defineEventHandler } from 'h3'
+// We'll use the existing getFilamentStock function that's already in your codebase
+import { getFilamentStock } from '../../utils/db'
 
-export default async (req: Request, res: Response) => {
+export default defineEventHandler(async (event) => {
   try {
-    const filaments = await getFilamentStock();
-    res.status(200).json(filaments);
+    // Get filaments from the existing database utility function
+    const filaments = await getFilamentStock()
+    
+    // Return as JSON response
+    return filaments
   } catch (error) {
-    console.error('API error fetching filament stock:', error);
-    res.status(500).json({ error: 'Failed to fetch filament stock' });
+    console.error('API error fetching filament stock:', error)
+    return {
+      statusCode: 500,
+      error: 'Failed to fetch filament stock'
+    }
   }
-};
+})

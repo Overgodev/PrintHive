@@ -281,4 +281,97 @@ export const getFilamentUsageStats = async (months = 3) => {
     throw error;
   }
 };
+
+interface FilamentRow {
+  id: number;
+  name: string;
+  color: string;
+  type: string;
+  stock_percentage: number;
+  hex_code: string | null;
+  remaining_weight: number;
+  weight: number;
+  diameter: number;
+}
+
+interface FilamentInventoryItem {
+  filament_id: number;
+  name: string;
+  color: string;
+  type: string;
+  stock_percentage: number;
+  hex_code?: string;
+  inStock: boolean;
+}
+
+export const getDetailedFilamentInventory = async (): Promise<FilamentInventoryItem[]> => {
+  try {
+    const [rows] = await db.query<FilamentRow[]>(`
+      SELECT 
+        f.stock_id as id,
+        CONCAT(f.material, ' ', f.color) as name,
+        f.color,
+        f.material as type,
+        ROUND((f.remaining_weight / f.weight) * 100) as stock_percentage,
+        f.hex_code,
+        f.remaining_weight,
+        f.weight,
+        f.diameter
+      FROM 
+        filament f
+      ORDER BY 
+        stock_percentage ASC,
+        f.material ASC, 
+        f.color ASC
+    `);
+    
+    // Make sure rows is an array (TypeScript safety)
+    if (!Array.isArray(rows)) {
+      console.error('Expected array of rows but got:', typeof rows);
+      return [];
+    }
+    
+    // Map rows to the expected format
+    return rows.map(row => ({
+      filament_id: row.id,
+      name: row.name,
+      color: row.color,
+      type: row.type,
+      stock_percentage: row.stock_percentage,
+      hex_code: row.hex_code || getColorHexCode(row.color),
+      inStock: row.stock_percentage > 30
+    }));
+  } catch (error) {
+    console.error('Error fetching filament stock:', error);
+    throw error;
+  }
+};
+
+// Helper function to get color hex code
+function getColorHexCode(color: string): string {
+  const colorMap: Record<string, string> = {
+    'black': '#000000',
+    'white': '#FFFFFF',
+    'red': '#FF0000',
+    'green': '#00FF00',
+    'blue': '#0000FF',
+    'yellow': '#FFFF00',
+    'cyan': '#00FFFF',
+    'magenta': '#FF00FF',
+    'orange': '#FFA500',
+    'purple': '#800080',
+    'pink': '#FFC0CB',
+    'brown': '#A52A2A',
+    'gray': '#808080',
+    'grey': '#808080',
+    'silver': '#C0C0C0',
+    'gold': '#FFD700',
+    'transparent': 'rgba(255, 255, 255, 0.3)',
+    'natural': '#F5F5DC',
+  };
+  
+  const lowerColor = color.toLowerCase();
+  return colorMap[lowerColor] || '#777777';
+}
+
 export { db };
