@@ -1,13 +1,13 @@
 <template>
   <div class="dashboard-wrapper">
     <div class="dashboard-container">
-      <!-- Sidebar Navigation -->
+      <!-- Sidebar Navigation (UPDATED) -->
       <div class="sidebar">
         <div class="logo-container">
           <img src="/logo.png" alt="PrintHive Logo" class="company-logo" />
         </div>
         <div class="nav-links">
-          <router-link to="/dashboard" class="nav-item active">
+          <router-link to="/dashboard" class="nav-item">
             <i class="nav-icon home-icon"></i>
             <span>Dashboard</span>
           </router-link>
@@ -15,9 +15,17 @@
             <i class="nav-icon printer-icon"></i>
             <span>Printers</span>
           </router-link>
-          <router-link to="/filaments" class="nav-item">
-            <i class="nav-icon filament-icon"></i>
-            <span>Filaments</span>
+          <router-link to="/print-queue" class="nav-item">
+            <i class="nav-icon queue-icon"></i>
+            <span>Print Queue</span>
+          </router-link>
+          <router-link to="/parts" class="nav-item">
+            <i class="nav-icon parts-icon"></i>
+            <span>Parts</span>
+          </router-link>
+          <router-link to="/filaments" class="nav-item" style="position: relative; z-index: 10;">
+          <i class="nav-icon filament-icon"></i>
+          <span>Filaments</span>
           </router-link>
           <router-link to="/maintenance" class="nav-item">
             <i class="nav-icon maintenance-icon"></i>
@@ -270,6 +278,7 @@ const maintenanceTasks = ref([])
 // Filament inventory states
 const loadingFilaments = ref(true)
 const filamentError = ref(null)
+
 
 /**
  * Fetch printers with silent background refresh support
@@ -932,6 +941,16 @@ onMounted(() => {
 .printer-icon {
   mask-image: url("/pic/icon/printer-icon.png");
   -webkit-mask-image: url("/pic/icon/printer-icon.png");
+}
+
+.queue-icon {
+  mask-image: url("/pic/icon/queue-icon.png");
+  -webkit-mask-image: url("/pic/icon/queue-icon.png");
+}
+
+.parts-icon {
+  mask-image: url("/pic/icon/parts-icon.png");
+  -webkit-mask-image: url("/pic/icon/parts-icon.png");
 }
 
 .filament-icon {

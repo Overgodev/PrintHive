@@ -113,13 +113,13 @@ async function fetchFilaments(printerId: number): Promise<FilamentData[]> {
     
     // Check if we found any filament data
     if (!Array.isArray(currentFilaments) || currentFilaments.length === 0) {
-      console.log(`No current spool found for printer ID ${printerId}`);
+      //console.log(`No current spool found for printer ID ${printerId}`);
       return [];
     }
     
     return currentFilaments;
   } catch (error) {
-    console.error(`Error fetching filaments for printer ID ${printerId}:`, error);
+    //console.error(`Error fetching filaments for printer ID ${printerId}:`, error);
     // Just log the error instead of throwing it, and return an empty array
     // This prevents the error from breaking the API response
     return []; 
@@ -151,30 +151,20 @@ function calculateTimeRemaining(printStats: any): number | undefined {
  * Map Moonraker printer state to application state format
  */
 function mapPrinterState(moonrakerState: string): string {
-  switch (moonrakerState.toLowerCase()) {
-    case 'printing':
-    case 'resuming':
-    case 'sdcard_printing':
-      return 'printing';
-      
-    case 'paused':
-      return 'paused';
-      
-    case 'ready':
-    case 'standby':
-    case 'complete':  
-      return 'idle';
-      
-    case 'error':
-    case 'shutdown':
-    case 'halt':
-    case 'config_error':
-      return 'error';
-      
-    default:
-      return 'offline';
-  }
+  const state = moonrakerState.toLowerCase();
+
+  if (['printing', 'resuming', 'sdcard_printing'].includes(state)) return 'printing';
+  if (['paused', 'pausing'].includes(state)) return 'paused';
+  if (['ready', 'standby', 'complete', 'idle'].includes(state)) return 'idle';
+  if (['cancelled'].includes(state)) return 'cancelled'; // Optional: distinguish cancelled vs idle
+  if (['error', 'shutdown', 'shutdown_by_mcu', 'emergency_shutdown', 'halt', 'config_error', 'firmware_restart', 'mcu_lost', 'klippy_disconnect', 'klippy_shutdown'].includes(state)) return 'error';
+  if (['startup', 'initializing', 'connecting', 'starting'].includes(state)) return 'starting';
+  if (['cooling'].includes(state)) return 'cooling';
+  if (['maintenance', 'calibrating', 'homing', 'leveling', 'meshing'].includes(state)) return 'maintenance';
+
+  return 'offline';
 }
+
 
 /**
  * Get printer data with direct Moonraker connection
@@ -271,7 +261,10 @@ export default defineEventHandler(async (event) => {
         console.log(`Retrieved ${filaments.length} filaments for printer ${printer.printer_name}`);
         
         // Map Moonraker state to our application state format
-        status.print_stats.state = mapPrinterState(status.print_stats.state);
+        const originalState = status.print_stats.state;
+        (status.print_stats as any).cancelled = originalState === 'cancelled';
+        status.print_stats.state = mapPrinterState(originalState);
+
         
         // Add printer to the data array
         printerData.push({
