@@ -14,7 +14,6 @@ npm install
 
 =======
 ```
->>>>>>> 89c7c92536642c21f835dd8735c34f6b7f12dca1
 
 ## Development Server
 
